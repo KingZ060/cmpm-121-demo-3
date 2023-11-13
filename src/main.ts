@@ -41,7 +41,7 @@ const sensorButton = document.querySelector("#sensor")!;
 sensorButton.addEventListener("click", () => {
   navigator.geolocation.watchPosition((position) => {
     playerMarker.setLatLng(
-      leaflet.latLng(position.coords.latitude, position.coords.longitude)
+      leaflet.latLng(position.coords.latitude, position.coords.longitude),
     );
     map.setView(playerMarker.getLatLng());
   });
@@ -70,14 +70,30 @@ function makePit(i: number, j: number) {
     const container = document.createElement("div");
     container.innerHTML = `
                 <div>There is a pit here at "${i},${j}". It has value <span id="value">${value}</span>.</div>
-                <button id="poke">poke</button>`;
+                <button id="poke">poke</button>
+                <button id="deposit">deposit</button>`;
+
     const poke = container.querySelector<HTMLButtonElement>("#poke")!;
     poke.addEventListener("click", () => {
+      if (value <= 0) {
+        alert("There no more coin to poked from this pit.");
+        return;
+      }
       value--;
       container.querySelector<HTMLSpanElement>("#value")!.innerHTML =
         value.toString();
       points++;
       statusPanel.innerHTML = `${points} points accumulated`;
+    });
+    const deposit = container.querySelector<HTMLButtonElement>("#deposit")!;
+    deposit.addEventListener("click", () => {
+      if (points <= 0) return;
+      value++;
+      container.querySelector<HTMLSpanElement>("#value")!.innerHTML =
+        value.toString();
+      points--;
+      if (points == 0) statusPanel.innerHTML = `No points yet...`;
+      else statusPanel.innerHTML = `${points} points accumulated`;
     });
     return container;
   });
