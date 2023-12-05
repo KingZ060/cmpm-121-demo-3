@@ -55,9 +55,24 @@ interface Coin {
   serial: number;
 }
 
+function createCoin(i: number, j: number, serial: number) {
+  const cell = { i: i, j: j };
+  return { cell, serial };
+}
+
+function updateCoinDisplay(coinDisplay: HTMLDivElement, coins: Coin[]) {
+  coinDisplay.innerHTML = ""; // Clear existing content
+  coins.forEach((coin, index) => {
+    const coinElement = document.createElement("div");
+    coinElement.textContent = `Coin ${index + 1} at (${coin.cell.i}, ${
+      coin.cell.j
+    }), Serial: ${coin.serial}`;
+    coinDisplay.appendChild(coinElement);
+  });
+}
+
 let coinMap: Map<string, Coin[]> = new Map<string, Coin[]>();
-const PLAYER_COINS: Coin[] = [];
-let points = 0;
+const playerCoins: Coin[] = [];
 const statusPanel = document.querySelector<HTMLDivElement>("#statusPanel")!;
 statusPanel.innerHTML = "No points yet...";
 
@@ -71,49 +86,60 @@ function makePit(i: number, j: number) {
   const bounds = board.getCellBounds(cell);
   const pit = leaflet.rectangle(bounds) as leaflet.Layer;
 
+  const initialCoinCount = Math.floor(
+    luck([i, j, "initialValue"].toString()) * 100
+  );
+  let coins: Coin[] = [];
+  for (let serial = 0; serial < initialCoinCount; serial++) {
+    coins.push(createCoin(cell.i, cell.j, serial));
+  }
+  coinMap.set(`${cell.i},${cell.j}`, coins);
+
   pit.bindPopup(() => {
-    let value = Math.floor(
-      luck([cell.i, cell.j, "initialValue"].toString()) * 100
-    );
     const container = document.createElement("div");
+    let currentCount: Coin[] = coinMap.get(`${cell.i},${cell.j}`)!;
     container.innerHTML = `
-                <div>There is a pit here at "${cell.i},${cell.j}". It has value <span id="value">${value}</span>.</div>
+                <div>There is a pit here at "${cell.i},${cell.j}". It has value <span id="value">${currentCount.length}</span>.</div>
                 <div class="coinDisplay" style="height: 100px; overflow-y: scroll;"></div>
                 <button id="poke">poke</button>
                 <button id="deposit">deposit</button>`;
 
     const coinDisplay =
       container.querySelector<HTMLDivElement>(".coinDisplay")!;
+    updateCoinDisplay(coinDisplay, currentCount);
+
     const poke = container.querySelector<HTMLButtonElement>("#poke")!;
     poke.addEventListener("click", () => {
-      if (value <= 0) {
+      let pitCoins = coinMap.get(`${cell.i},${cell.j}`);
+      if (pitCoins && pitCoins.length > 0) {
+        let coin: Coin | undefined = pitCoins.pop();
+        if (coin !== undefined) {
+          playerCoins.push(coin);
+          container.querySelector<HTMLSpanElement>("#value")!.innerHTML =
+            pitCoins.length.toString();
+          statusPanel.innerHTML = `${playerCoins.length} points accumulated`;
+          updateCoinDisplay(coinDisplay, pitCoins);
+        }
+      } else {
         alert("There no more coin to poked from this pit.");
         return;
       }
-      // const coin = coinMap.pop();
-      // playerCoins.push(coin);
-      value--;
-      points++;
-      container.querySelector<HTMLSpanElement>("#value")!.innerHTML =
-        value.toString();
-      statusPanel.innerHTML = `${points} points accumulated`;
     });
 
     const deposit = container.querySelector<HTMLButtonElement>("#deposit")!;
     deposit.addEventListener("click", () => {
-      if (points <= 0) return;
-      // value++;
-      // container.querySelector<HTMLSpanElement>("#value")!.innerHTML =
-      //   value.toString();
-      // points--;
-      const coin = playerCoins.pop(); // Remove a coin from the player's list
-      coinMap.push(coin); // Add the coin back to the pit
-      points--;
-      value++;
-      container.querySelector<HTMLSpanElement>("#value")!.innerHTML =
-        value.toString();
-      if (points == 0) statusPanel.innerHTML = `No points yet...`;
-      else statusPanel.innerHTML = `${points} points accumulated`;
+      if (playerCoins.length <= 0) return;
+      let coin: Coin | undefined = playerCoins.pop();
+      if (coin !== undefined) {
+        let pitCoins = coinMap.get(`${cell.i},${cell.j}`) || [];
+        pitCoins.push(coin);
+        coinMap.set(`${cell.i},${cell.j}`, pitCoins);
+        container.querySelector<HTMLSpanElement>("#value")!.innerHTML =
+          pitCoins.length.toString();
+        if (playerCoins.length == 0) statusPanel.innerHTML = `No points yet...`;
+        else statusPanel.innerHTML = `${playerCoins.length} points accumulated`;
+        updateCoinDisplay(coinDisplay, pitCoins);
+      }
     });
     return container;
   });
