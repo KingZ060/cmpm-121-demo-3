@@ -49,6 +49,10 @@ sensorButton.addEventListener("click", () => {
       leaflet.latLng(position.coords.latitude, position.coords.longitude)
     );
     map.setView(playerMarker.getLatLng());
+    movementHistory = [
+      [playerMarker.getLatLng().lat, playerMarker.getLatLng().lng],
+    ];
+    regenerateCaches();
   });
 });
 
@@ -74,7 +78,7 @@ function updateCoinDisplay(coinDisplay: HTMLDivElement, coins: Coin[]) {
 }
 
 let geocacheMap: Map<string, Geocache> = new Map<string, Geocache>();
-const playerCoins: Coin[] = [];
+let playerCoins: Coin[] = [];
 const statusPanel = document.querySelector<HTMLDivElement>("#statusPanel")!;
 statusPanel.innerHTML = "No points yet...";
 
@@ -158,6 +162,8 @@ function makePit(i: number, j: number) {
             geocache.coins.length.toString();
           statusPanel.innerHTML = `${playerCoins.length} points accumulated`;
           updateCoinDisplay(coinDisplay, geocache.coins);
+          saveGeocacheStates();
+          saveGameState();
         }
       } else {
         alert("There no more coin to poked from this pit.");
@@ -180,6 +186,8 @@ function makePit(i: number, j: number) {
         if (playerCoins.length == 0) statusPanel.innerHTML = `No points yet...`;
         else statusPanel.innerHTML = `${playerCoins.length} points accumulated`;
         updateCoinDisplay(coinDisplay, geocache.coins);
+        saveGeocacheStates();
+        saveGameState();
       }
     });
     return container;
@@ -221,6 +229,74 @@ function movePlayer(latChange: number, lngChange: number) {
   playerMarker.setLatLng(newPos);
   map.setView(newPos);
   regenerateCaches();
+  updateMovementHistory(currentPos.lat + latChange, currentPos.lng + lngChange);
+  saveGameState();
+}
+
+let movementHistory: [number, number][] = [
+  [MERRILL_CLASSROOM.lat, MERRILL_CLASSROOM.lng],
+];
+
+function updateMovementHistory(lat: number, lng: number) {
+  movementHistory.push([lat, lng]);
+  L.polyline(movementHistory, { color: "blue" }).addTo(map);
+}
+
+function saveGameState() {
+  const geocacheData = Array.from(geocacheMap.entries()).map(
+    ([key, geocache]) => {
+      return { key, geocache: geocache.toMomento() };
+    }
+  );
+  const gameState = {
+    playerPosition: playerMarker.getLatLng(),
+    playerCoins: playerCoins,
+    movementHistory: movementHistory,
+    geocacheData: geocacheData,
+  };
+  localStorage.setItem("gameState", JSON.stringify(gameState));
+  // console.log("Saved State:", gameState.playerCoins.length);
+}
+
+function loadGameState() {
+  const savedState = localStorage.getItem("gameState");
+  if (savedState) {
+    const gameState = JSON.parse(savedState);
+    playerMarker.setLatLng(gameState.playerPosition);
+    playerCoins = gameState.playerCoins;
+    geocacheMap.clear();
+    gameState.geocacheData.forEach(
+      ({ key, geocache }: { key: string; geocache: string }) => {
+        const restoredGeocache = new Geocache(0, 0, []);
+        restoredGeocache.fromMomento(geocache);
+        geocacheMap.set(key, restoredGeocache);
+      }
+    );
+    regenerateCaches();
+    statusPanel.innerHTML = `${playerCoins.length} points accumulated`;
+    movementHistory = gameState.movementHistory;
+    L.polyline(movementHistory, { color: "blue" }).addTo(map);
+    map.setView(playerMarker.getLatLng());
+  }
+}
+
+function resetGameState() {
+  localStorage.clear();
+  playerMarker.setLatLng(MERRILL_CLASSROOM);
+  map.panTo(MERRILL_CLASSROOM);
+  movementHistory = [[MERRILL_CLASSROOM.lat, MERRILL_CLASSROOM.lng]];
+  playerCoins = [];
+  statusPanel.innerHTML = "No points yet...";
+  map.eachLayer((layer) => {
+    if (
+      layer instanceof L.Polyline ||
+      (layer !== playerMarker && !(layer instanceof L.TileLayer))
+    ) {
+      map.removeLayer(layer);
+    }
+  });
+  geocacheMap.clear();
+  regenerateCaches();
 }
 
 document
@@ -235,11 +311,15 @@ document
 document
   .getElementById("west")!
   .addEventListener("click", () => movePlayer(0, -MOVE_STEP));
+document.getElementById("reset")!.addEventListener("click", resetGameState);
 
-for (let i = -NEIGHBORHOOD_SIZE; i < NEIGHBORHOOD_SIZE; i++) {
-  for (let j = -NEIGHBORHOOD_SIZE; j < NEIGHBORHOOD_SIZE; j++) {
-    if (luck([i, j].toString()) < PIT_SPAWN_PROBABILITY) {
-      makePit(i, j);
+loadGameState();
+if (!localStorage.getItem("gameState")) {
+  for (let i = -NEIGHBORHOOD_SIZE; i < NEIGHBORHOOD_SIZE; i++) {
+    for (let j = -NEIGHBORHOOD_SIZE; j < NEIGHBORHOOD_SIZE; j++) {
+      if (luck([i, j].toString()) < PIT_SPAWN_PROBABILITY) {
+        makePit(i, j);
+      }
     }
   }
 }
